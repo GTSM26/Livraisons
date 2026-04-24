@@ -146,12 +146,12 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
       `${item.expediteur} / ${item.destinataire}\nRef: ${item.voyage} Pos: ${item.position}`,
       item.nbreColis,
       item.poids.toFixed(2),
-      item.observations || 'ENSEMBLE'
+      item.mpl.toFixed(2)
     ]);
     
     autoTable(doc, {
       startY: 108,
-      head: [['Désignation', 'Quantité', 'Poids (kg)', 'MOYEN']],
+      head: [['Désignation', 'Quantité', 'Poids (kg)', 'MPL']],
       body: tableData,
       theme: 'grid',
       headStyles: { 
