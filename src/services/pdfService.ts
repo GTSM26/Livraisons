@@ -6,6 +6,11 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
   const doc = new jsPDF();
   const firstItem = items[0];
   
+  // Format numbers with space as thousands separator
+  const formatAmount = (val: number) => {
+    return val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  };
+
   // Date d'opération = Date de Sortie
   const dateSortieString = firstItem?.dateSortie || "/";
   const dateOperation = dateSortieString !== "/" ? dateSortieString : (firstItem?.dateDepotage || new Date().toLocaleDateString());
@@ -145,8 +150,8 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     const tableData = items.map(item => [
       `${item.expediteur} / ${item.destinataire}\nRef: ${item.voyage} Pos: ${item.position}`,
       item.nbreColis,
-      item.poids.toFixed(2),
-      item.mpl.toFixed(2)
+      formatAmount(item.poids),
+      formatAmount(item.mpl)
     ]);
     
     autoTable(doc, {
@@ -196,7 +201,7 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 58, 138);
     doc.text(`TOTAL COLIS: ${totalColis}`, 125, currentY + 5);
-    doc.text(`TOTAL MPL: ${totalMPL.toFixed(2)}`, 160, currentY + 5);
+    doc.text(`TOTAL MPL: ${formatAmount(totalMPL)}`, 160, currentY + 5);
     currentY += 10;
 
     ensureSpace(25);
@@ -228,9 +233,9 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     doc.setFont('helvetica', 'bold');
     doc.text('Montant à Payer TTC :', rightX, currentY + 22);
     doc.setTextColor(220, 38, 38);
-    doc.text(ht.toFixed(2), valueX, currentY + 12, { align: 'right' });
-    doc.text(tva.toFixed(2), valueX, currentY + 17, { align: 'right' });
-    doc.text(ttc.toFixed(2), valueX, currentY + 22, { align: 'right' });
+    doc.text(formatAmount(ht), valueX, currentY + 12, { align: 'right' });
+    doc.text(formatAmount(tva), valueX, currentY + 17, { align: 'right' });
+    doc.text(formatAmount(ttc), valueX, currentY + 22, { align: 'right' });
     
     doc.setTextColor(30, 58, 138);
     doc.setFontSize(10);
@@ -240,5 +245,161 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     doc.text(refText, 20, currentY + 38, { maxWidth: 100 });
     
     doc.save(`${bcdNumber}.pdf`);
+  };
+};
+
+export const generateExtractionPDF = (
+  groupedTours: Record<string, Record<string, Record<string, Record<number, DeliveryData[]>>>>,
+  filters: { carrier: string; month: string; startDate: string; endDate: string }
+) => {
+  const doc = new jsPDF();
+  const logoUrl = '/Images/Entête GTSM.png';
+  
+  // Format numbers with space as thousands separator
+  const formatAmount = (val: number) => {
+    return val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  };
+  
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(img, 0, 0);
+      try {
+        finalizePdf(canvas.toDataURL("image/png"));
+      } catch (e) {
+        finalizePdf();
+      }
+    } else {
+      finalizePdf();
+    }
+  };
+  img.onerror = () => finalizePdf();
+  img.src = logoUrl;
+
+  const finalizePdf = (logoData?: string) => {
+    const drawFooter = (pageNumber: number) => {
+      const footerY = 285;
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      const addressLine = '21 Angle Bd Hadj Mekouar et Passage La Plage Bureau N° 12 3éme ETG Ain Sebaâ, Casablanca';
+      const contactLine = 'Tél.: +(212) 05 22 67 22 12/13  -  ICE N°: 001511159000011';
+      doc.text(addressLine, 105, footerY, { align: 'center' });
+      doc.text(contactLine, 105, footerY + 4, { align: 'center' });
+      doc.text(`Page ${pageNumber}`, 190, footerY + 4, { align: 'right' });
+    };
+
+    if (logoData) {
+      doc.addImage(logoData, 'PNG', 15, 10, 180, 25);
+    }
+
+    doc.setFontSize(18);
+    doc.setTextColor(30, 58, 138);
+    doc.setFont('helvetica', 'bold');
+    doc.text("ACTIVITE TRANSPORTEUR", 105, 45, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'normal');
+    const filterText = [
+      `Transporteur: ${filters.carrier === 'all' ? 'Tous' : filters.carrier}`,
+      `Mois: ${filters.month === 'all' ? 'Tous' : filters.month}`,
+      filters.startDate || filters.endDate ? `Période: ${filters.startDate || '—'} au ${filters.endDate || '—'}` : ''
+    ].filter(Boolean).join('  |  ');
+    doc.text(filterText, 105, 52, { align: 'center' });
+
+    // Global Statistics
+    let totalWeight = 0;
+    let totalCost = 0;
+    let totalLots = 0;
+    let totalTours = 0;
+
+    Object.values(groupedTours).forEach(carriers => {
+      Object.values(carriers).forEach(dates => {
+        Object.values(dates).forEach(tours => {
+          Object.values(tours).forEach(items => {
+            totalTours++;
+            totalLots += items.length;
+            totalWeight += items.reduce((sum, i) => sum + i.poids, 0);
+            totalCost += items.reduce((sum, i) => sum + i.prixHT, 0);
+          });
+        });
+      });
+    });
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(15, 60, 180, 20, 3, 3, 'F');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("TOURNÉES", 30, 68);
+    doc.text("LOTS", 70, 68);
+    doc.text("POIDS TOTAL", 110, 68);
+    doc.text("COÛT TOTAL HT", 155, 68);
+
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text(totalTours.toString(), 30, 75);
+    doc.text(totalLots.toString(), 70, 75);
+    doc.text(`${formatAmount(totalWeight)} kg`, 110, 75);
+    doc.text(`${formatAmount(totalCost)} MAD`, 155, 75);
+
+    let currentY = 90;
+
+    Object.entries(groupedTours).forEach(([type, carriers]) => {
+      // Flow Header
+      if (currentY > 250) { doc.addPage(); currentY = 20; }
+      doc.setFillColor(30, 58, 138);
+      doc.rect(15, currentY, 180, 8, 'F');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`FLUX: ${type.toUpperCase()}`, 20, currentY + 5.5);
+      currentY += 12;
+
+      Object.entries(carriers).forEach(([carrierName, dates]) => {
+        Object.entries(dates).forEach(([date, tours]) => {
+          Object.entries(tours).forEach(([tourNo, items]) => {
+            const tourTotalCost = items.reduce((sum, i) => sum + i.prixHT, 0);
+            const tourTotalWeight = items.reduce((sum, i) => sum + i.poids, 0);
+            const vhc = items[0]?.nVehicule || "—";
+
+            if (currentY > 240) { doc.addPage(); currentY = 20; }
+            
+            doc.setFontSize(9);
+            doc.setTextColor(51, 65, 85);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Tournée #${tourNo} - ${date} - ${carrierName} (${vhc})`, 15, currentY);
+            doc.setTextColor(220, 38, 38);
+            doc.text(`${formatAmount(tourTotalCost)} MAD`, 195, currentY, { align: 'right' });
+            currentY += 4;
+
+            autoTable(doc, {
+              startY: currentY,
+              head: [['Expéditeur / Destinataire', 'Voyage / Pos', 'Poids', 'Prix HT']],
+              body: items.map(item => [
+                `${item.expediteur}\n→ ${item.destinataire}`,
+                `${item.voyage}\n${item.position}`,
+                `${formatAmount(item.poids)} kg`,
+                `${formatAmount(item.prixHT)} MAD`
+              ]),
+              theme: 'grid',
+              styles: { fontSize: 8, cellPadding: 2 },
+              headStyles: { fillColor: [71, 85, 105] },
+              margin: { left: 15, right: 15 },
+              didDrawPage: (data) => drawFooter(data.pageNumber)
+            });
+
+            currentY = (doc as any).lastAutoTable.finalY + 10;
+          });
+        });
+      });
+    });
+
+    const filename = `activite_transporteur_${filters.carrier}_${new Date().toISOString().split('T')[0]}.pdf`.replace(/\s+/g, '_').toLowerCase();
+    doc.save(filename);
   };
 };

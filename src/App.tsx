@@ -9,6 +9,7 @@
  */
 
 import React, { useMemo, useState, useEffect } from 'react';
+import Papa from 'papaparse';
 import { 
   BarChart, 
   Bar, 
@@ -50,7 +51,7 @@ import { logData as initialData, DeliveryData } from './data';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { fetchLogisticsData } from './services/dataService';
-import { generateBCD } from './services/pdfService';
+import { generateBCD, generateExtractionPDF } from './services/pdfService';
 import { RefreshCw } from 'lucide-react';
 
 // BCD Registry Key
@@ -305,6 +306,86 @@ export default function App() {
       return Number(dateB) - Number(dateA); // Plus récents d'abord
     });
   }, [data]);
+
+  const groupedTours = useMemo(() => {
+    const normalize = (str: string) => 
+      str.toLowerCase()
+         .normalize("NFD")
+         .replace(/[\u0300-\u036f]/g, "")
+         .trim();
+
+    const toursMap: Record<string, Record<string, Record<string, Record<number, DeliveryData[]>>>> = {};
+    
+    filteredData.forEach(item => {
+      const itemType = item.typeLivraison || "AUTRE";
+      if (deliveryTypeFilter !== 'all') {
+        if (normalize(itemType) !== normalize(deliveryTypeFilter)) return;
+      }
+      const typeKey = itemType;
+      const t = item.transporteur;
+      const d = dateTypeFilter === 'depotage' ? item.dateDepotage : item.dateSortie;
+      const tourNo = item.tourne || 1;
+      if (!toursMap[typeKey]) toursMap[typeKey] = {};
+      if (!toursMap[typeKey][t]) toursMap[typeKey][t] = {};
+      if (!toursMap[typeKey][t][d]) toursMap[typeKey][t][d] = {};
+      if (!toursMap[typeKey][t][d][tourNo]) toursMap[typeKey][t][d][tourNo] = [];
+      toursMap[typeKey][t][d][tourNo].push(item);
+    });
+    return toursMap;
+  }, [filteredData, deliveryTypeFilter, dateTypeFilter]);
+
+  const handleExportCSV = () => {
+    const exportData: any[] = [];
+    
+    Object.entries(groupedTours).forEach(([type, carriers]) => {
+      Object.entries(carriers).forEach(([carrierName, dates]) => {
+        Object.entries(dates).forEach(([date, tours]) => {
+          Object.entries(tours).forEach(([tourNo, items]) => {
+            const tourTotalCost = items.reduce((sum, i) => sum + i.prixHT, 0);
+            
+            items.forEach(item => {
+              exportData.push({
+                "Type de Livraison": type,
+                "Date": date,
+                "Tournée #": tourNo,
+                "Transporteur": carrierName,
+                "Véhicule": item.nVehicule || "—",
+                "Zone": item.zone,
+                "Expéditeur": item.expediteur,
+                "Destinataire": item.destinataire,
+                "Voyage": item.voyage,
+                "Position": item.position,
+                "Nbr Colis": item.nbreColis,
+                "Poids (kg)": item.poids,
+                "Prix Lot HT (MAD)": item.prixHT,
+                "Prix Total Tournée HT (MAD)": tourTotalCost
+              });
+            });
+          });
+        });
+      });
+    });
+
+    const csv = Papa.unparse(exportData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `extractions_tournees_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportPDF = () => {
+    generateExtractionPDF(groupedTours, {
+      carrier: carrierFilter,
+      month: monthFilter,
+      startDate: startDate,
+      endDate: endDate
+    });
+  };
 
   // --- Render Helpers ---
 
@@ -1045,49 +1126,41 @@ export default function App() {
                       />
                     </div>
 
-                    <button 
-                      onClick={() => {
-                        setDeliveryTypeFilter('all');
-                        setStartDate('');
-                        setEndDate('');
-                        setCarrierFilter('all');
-                        setSearchTerm('');
-                      }}
-                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                      Réinitialiser
-                    </button>
+                      <button 
+                        onClick={() => {
+                          setDeliveryTypeFilter('all');
+                          setStartDate('');
+                          setEndDate('');
+                          setCarrierFilter('all');
+                          setSearchTerm('');
+                        }}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                        Réinitialiser
+                      </button>
+
+                      <button 
+                        onClick={handleExportCSV}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95"
+                      >
+                        <Download className="w-4 h-4" />
+                        CSV
+                      </button>
+
+                      <button 
+                        onClick={handleExportPDF}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                      >
+                        <FileText className="w-4 h-4" />
+                        PDF
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* Content */}
-                {(() => {
-                  const normalize = (str: string) => 
-                    str.toLowerCase()
-                       .normalize("NFD")
-                       .replace(/[\u0300-\u036f]/g, "")
-                       .trim();
-
-                  const toursMap: Record<string, Record<string, Record<string, Record<number, DeliveryData[]>>>> = {};
-                  
-                  filteredData.forEach(item => {
-                    const itemType = item.typeLivraison || "AUTRE";
-                    if (deliveryTypeFilter !== 'all') {
-                      if (normalize(itemType) !== normalize(deliveryTypeFilter)) return;
-                    }
-                    const typeKey = itemType;
-                    const t = item.transporteur;
-                    const d = dateTypeFilter === 'depotage' ? item.dateDepotage : item.dateSortie;
-                    const tourNo = item.tourne || 1;
-                    if (!toursMap[typeKey]) toursMap[typeKey] = {};
-                    if (!toursMap[typeKey][t]) toursMap[typeKey][t] = {};
-                    if (!toursMap[typeKey][t][d]) toursMap[typeKey][t][d] = {};
-                    if (!toursMap[typeKey][t][d][tourNo]) toursMap[typeKey][t][d][tourNo] = [];
-                    toursMap[typeKey][t][d][tourNo].push(item);
-                  });
-
-                  return Object.entries(toursMap).sort((a,b) => a[0].localeCompare(b[0])).map(([type, carriers]) => (
+                  {/* Content */}
+                  {(() => {
+                    return Object.entries(groupedTours).sort((a,b) => a[0].localeCompare(b[0])).map(([type, carriers]) => (
                     <div key={type} className="space-y-6">
                       <div className="flex items-center gap-4">
                         <div className={cn(
