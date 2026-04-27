@@ -50,12 +50,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { logData as initialData, DeliveryData } from './data';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { fetchLogisticsData } from './services/dataService';
+import { fetchLogisticsData, type OperationType } from './services/dataService';
 import { generateBCD, generateExtractionPDF } from './services/pdfService';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Globe, ArrowLeftRight } from 'lucide-react';
 
 // BCD Registry Key
 const BCD_STORAGE_KEY = 'gtsm_bcd_registry';
+const OP_TYPE_KEY = 'gtsm_operation_type';
 
 /** Utility for Tailwind class merging */
 function cn(...inputs: ClassValue[]) {
@@ -84,7 +85,7 @@ const StatCard = ({ title, value, subValue, icon: Icon, trend, prefix = "", suff
       <div className="p-2 bg-slate-100 rounded-xl">
         <Icon className="w-6 h-6 text-slate-600" />
       </div>
-      {trend && (
+      {trend !== undefined && (
         <span className={cn(
           "flex items-center text-xs font-semibold px-2 py-1 rounded-full",
           trend > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
@@ -105,6 +106,9 @@ const StatCard = ({ title, value, subValue, icon: Icon, trend, prefix = "", suff
 );
 
 export default function App() {
+  const [operationType, setOperationType] = useState<OperationType>(() => {
+    return (localStorage.getItem(OP_TYPE_KEY) as OperationType) || 'import';
+  });
   const [data, setData] = useState<DeliveryData[]>(initialData);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -127,10 +131,15 @@ export default function App() {
     return saved ? JSON.parse(saved) : {};
   });
 
+  // Save operation type to localStorage
+  useEffect(() => {
+    localStorage.setItem(OP_TYPE_KEY, operationType);
+  }, [operationType]);
+
   // Function to get or create a BCD number for a tour
   const getBcdNumberForTour = (tourNo: string, date: string, carrier: string) => {
-    // Unique key identifying the specific tour (Carrier + Date + TourNo)
-    const tourKey = `${carrier}_${date}_${tourNo}`.replace(/\s+/g, '_');
+    // Unique key identifying the specific tour (Carrier + Date + TourNo + OpType)
+    const tourKey = `${operationType}_${carrier}_${date}_${tourNo}`.replace(/\s+/g, '_');
     
     if (bcdRegistry[tourKey]) {
       return bcdRegistry[tourKey];
@@ -139,7 +148,8 @@ export default function App() {
     // Generate new BCD if not exists
     const year = new Date().getFullYear();
     const uniqueId = Math.floor(Math.random() * 900) + 100;
-    const newBcd = `BCD-${year}-${tourNo.padStart(3, '0')}-${uniqueId}`;
+    const prefix = operationType === 'import' ? 'BCD' : 'BCE';
+    const newBcd = `${prefix}-${year}-${tourNo.padStart(3, '0')}-${uniqueId}`;
     
     const newRegistry = { ...bcdRegistry, [tourKey]: newBcd };
     setBcdRegistry(newRegistry);
@@ -153,24 +163,36 @@ export default function App() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      const freshData = await fetchLogisticsData();
+      const freshData = await fetchLogisticsData(operationType);
       if (freshData && freshData.length > 0) {
         setData(freshData);
         setLastSync(new Date());
+      } else {
+        // En cas de données vides, on évite de bloquer sur les anciennes
+        setData([]);
       }
     } catch (error) {
       console.error("Failed to sync data:", error);
+      // Optionnel: on peut vider les données en cas d'erreur réseau pour éviter la confusion
+      setData([]);
     } finally {
       setIsSyncing(false);
     }
   };
 
+  // Reset data and filters when switching mode
   useEffect(() => {
+    setData([]); // On vide pour montrer que le chargement est en cours
+    setSelectedCarrier(null);
+    setCarrierFilter('all');
     handleSync();
+  }, [operationType]);
+
+  useEffect(() => {
     // Auto-sync every 5 minutes
     const interval = setInterval(handleSync, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [operationType]);
 
   // --- Helpers ---
 
@@ -407,7 +429,9 @@ export default function App() {
         <div className="p-6">
           <div className="flex flex-col gap-1 mb-10 border-l-4 border-[#ffcb05] pl-4">
             <h1 className="text-xl font-black tracking-tighter text-white">GTSM-Tanger</h1>
-            <p className="text-[10px] text-[#ffcb05] uppercase font-black tracking-widest leading-none">Livraison & Logistique Morocco</p>
+            <p className="text-[10px] text-[#ffcb05] uppercase font-black tracking-widest leading-none">
+              {operationType === 'import' ? 'Livraisons Import' : 'Ramassages Export'}
+            </p>
           </div>
 
           <nav className="space-y-1">
@@ -462,11 +486,33 @@ export default function App() {
         {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-4 flex-1">
+            <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl mr-4">
+              <button 
+                onClick={() => setOperationType('import')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2",
+                  operationType === 'import' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <ArrowDownRight className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <button 
+                onClick={() => setOperationType('export')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2",
+                  operationType === 'export' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                Export
+              </button>
+            </div>
             <div className="relative max-w-md w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input 
                 type="text" 
-                placeholder="Rechercher par transporteur, client, expéditeur..."
+                placeholder={`Rechercher ${operationType === 'import' ? 'destinataire' : 'expéditeur'}...`}
                 className="w-full bg-slate-100 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-indigo-500/20"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -475,7 +521,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden md:flex flex-col items-end mr-2">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dernière Sync</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dernière Sync ({operationType})</p>
               <p className="text-[10px] text-slate-500">{lastSync ? lastSync.toLocaleTimeString() : 'En attente...'}</p>
             </div>
             <button 
@@ -485,7 +531,7 @@ export default function App() {
                 "p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-all",
                 isSyncing && "animate-spin text-indigo-600"
               )}
-              title="Synchroniser avec Google Sheets"
+              title={`Synchroniser ${operationType} avec Google Sheets`}
             >
               <RefreshCw className="w-5 h-5" />
             </button>
@@ -502,7 +548,10 @@ export default function App() {
               </select>
             </div>
             <a 
-              href="https://docs.google.com/spreadsheets/d/e/2PACX-1vQdvPPg-o1ppWAbxeJ_2PRFRIiHPFQq8UCfMsGMkT7zMxY-bQcln5a06VQ2EQo9Tg/pub?output=csv"
+              href={operationType === 'import' 
+                ? "https://docs.google.com/spreadsheets/d/e/2PACX-1vQdvPPg-o1ppWAbxeJ_2PRFRIiHPFQq8UCfMsGMkT7zMxY-bQcln5a06VQ2EQo9Tg/pub?output=csv"
+                : `https://docs.google.com/spreadsheets/d/e/2PACX-1vQdvPPg-o1ppWAbxeJ_2PRFRIiHPFQq8UCfMsGMkT7zMxY-bQcln5a06VQ2EQo9Tg/pub?gid=1895360170&single=true&output=csv`
+              }
               target="_blank"
               rel="noreferrer"
               className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
@@ -1247,7 +1296,7 @@ export default function App() {
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const bcdNumber = getBcdNumberForTour(tourNo, date, carrierName);
-                                          generateBCD(tourNo, items, bcdNumber);
+                                          generateBCD(tourNo, items, bcdNumber, operationType === 'export');
                                         }}
                                         className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-colors"
                                       >

@@ -2,10 +2,15 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DeliveryData } from '../data';
 
-export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: string) => {
+export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: string, isExport: boolean = false) => {
   const doc = new jsPDF();
   const firstItem = items[0];
   
+  // Locations based on operation type
+  const originAddress = isExport ? (firstItem?.zone || '—') : 'MEAD GD TRANS TANGER';
+  const destinationClient = isExport ? 'GTSM' : (firstItem?.zone || 'TANGER / GTSM');
+  const deliveryAddress = isExport ? 'MEAD GD TRANS TANGER' : (firstItem?.zone || '—');
+
   // Format numbers with space as thousands separator
   const formatAmount = (val: number) => {
     return val.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -143,7 +148,7 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     doc.setFont('helvetica', 'normal');
     doc.text('Client / Destination :', 30, 93);
     doc.setFont('helvetica', 'bold');
-    doc.text(firstItem?.zone || 'TANGER / GTSM', 80, 93);
+    doc.text(destinationClient, 80, 93);
     
     drawSectionHeader("DÉTAILS DE L'EXPÉDITION", 101);
     
@@ -213,8 +218,8 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
     doc.text('Adresse de Livraison :', 25, currentY + 18);
     doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
-    doc.text('MEAD GD TRANS TANGER', 80, currentY + 12);
-    doc.text(firstItem?.zone || '—', 80, currentY + 18);
+    doc.text(originAddress, 80, currentY + 12);
+    doc.text(deliveryAddress, 80, currentY + 18);
     currentY += 25;
     
     ensureSpace(45);

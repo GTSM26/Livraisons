@@ -1,11 +1,22 @@
 import Papa from 'papaparse';
 import { DeliveryData } from '../data';
 
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQdvPPg-o1ppWAbxeJ_2PRFRIiHPFQq8UCfMsGMkT7zMxY-bQcln5a06VQ2EQo9Tg/pub?output=csv";
+const BASE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQdvPPg-o1ppWAbxeJ_2PRFRIiHPFQq8UCfMsGMkT7zMxY-bQcln5a06VQ2EQo9Tg/pub";
 
-export async function fetchLogisticsData(): Promise<DeliveryData[]> {
+export type OperationType = 'import' | 'export';
+
+const GIDS = {
+  import: null, 
+  export: "1895360170"
+};
+
+export async function fetchLogisticsData(type: OperationType = 'import'): Promise<DeliveryData[]> {
+  const url = type === 'import' 
+    ? `${BASE_URL}?output=csv` 
+    : `${BASE_URL}?gid=${GIDS[type]}&single=true&output=csv`;
+  
   return new Promise((resolve, reject) => {
-    Papa.parse(SHEET_URL, {
+    Papa.parse(url, {
       download: true,
       header: true,
       skipEmptyLines: true,
