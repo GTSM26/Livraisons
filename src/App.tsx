@@ -216,13 +216,13 @@ export default function App() {
   // --- Data Processing ---
 
   const sortedCarriers = useMemo(() => {
-    const carriers = Array.from(new Set(data.map(d => d.transporteur))).filter(Boolean);
-    return carriers.sort();
+    const carriers = Array.from(new Set(data.map(d => d.transporteur?.trim()))).filter(Boolean);
+    return (carriers as string[]).sort();
   }, [data]);
 
   const carrierStats = useMemo(() => {
     if (!selectedCarrier) return null;
-    const carrierData = data.filter(d => d.transporteur === selectedCarrier);
+    const carrierData = data.filter(d => d.transporteur?.trim() === selectedCarrier.trim());
     const totalOps = carrierData.length;
     const totalWeight = carrierData.reduce((acc, curr) => acc + curr.poids, 0);
     const totalCost = carrierData.reduce((acc, curr) => acc + curr.prixHT, 0);
@@ -297,17 +297,27 @@ export default function App() {
   const transportData = useMemo(() => {
     const groups: Record<string, number> = {};
     filteredData.forEach(item => {
-      groups[item.transporteur] = (groups[item.transporteur] || 0) + item.poids;
+      const name = item.transporteur?.trim();
+      if (name) {
+        groups[name] = (groups[name] || 0) + item.poids;
+      }
     });
-    return Object.entries(groups).map(([name, value]) => ({ name, value }));
+    return Object.entries(groups)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [filteredData]);
 
   const zoneData = useMemo(() => {
     const groups: Record<string, number> = {};
     filteredData.forEach(item => {
-      groups[item.zone] = (groups[item.zone] || 0) + 1;
+      const name = item.zone?.trim();
+      if (name) {
+        groups[name] = (groups[name] || 0) + 1;
+      }
     });
-    return Object.entries(groups).map(([name, value]) => ({ name, value }));
+    return Object.entries(groups)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [filteredData]);
 
   const monthlyTrend = useMemo(() => {
@@ -711,18 +721,24 @@ export default function App() {
                       <div className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Global</div>
                     </div>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={transportData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
-                          <YAxis fontSize={11} axisLine={false} tickLine={false} />
-                          <Tooltip 
-                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                            cursor={{ fill: '#f1f5f9' }}
-                          />
-                          <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {transportData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                          <BarChart data={transportData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
+                            <YAxis fontSize={11} axisLine={false} tickLine={false} />
+                            <Tooltip 
+                              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                              cursor={{ fill: '#f1f5f9' }}
+                            />
+                            <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
+                          Aucune donnée disponible
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -733,25 +749,31 @@ export default function App() {
                       <Filter className="w-4 h-4 text-slate-400" />
                     </div>
                     <div className="h-64 flex items-center">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={zoneData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            paddingAngle={5}
-                            dataKey="value"
-                          >
-                            {zoneData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend verticalAlign="bottom" height={36}/>
-                        </PieChart>
-                      </ResponsiveContainer>
+                      {zoneData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                          <PieChart>
+                            <Pie
+                              data={zoneData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              paddingAngle={5}
+                              dataKey="value"
+                            >
+                              {zoneData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend verticalAlign="bottom" height={36}/>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="w-full text-center text-slate-400 italic text-sm">
+                          Aucune zone enregistrée
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -760,15 +782,21 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h4 className="font-bold text-slate-800 mb-6">Evolution des Coûts par Semaine</h4>
                   <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={monthlyTrend}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="week" fontSize={11} axisLine={false} tickLine={false} />
-                        <YAxis fontSize={11} axisLine={false} tickLine={false} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="cost" stroke="#6366f1" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {monthlyTrend.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <LineChart data={monthlyTrend}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="week" fontSize={11} axisLine={false} tickLine={false} />
+                          <YAxis fontSize={11} axisLine={false} tickLine={false} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey="cost" stroke="#6366f1" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
+                        Données temporelles insuffisantes
+                      </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -1022,19 +1050,25 @@ export default function App() {
                           </div>
                         </div>
                         <div className="h-80">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={carrierStats.timeline}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="date" fontSize={11} axisLine={false} tickLine={false} />
-                              <YAxis yAxisId="left" fontSize={11} axisLine={false} tickLine={false} stroke="#6366f1" />
-                              <YAxis yAxisId="right" orientation="right" fontSize={11} axisLine={false} tickLine={false} stroke="#94a3b8" />
-                              <Tooltip 
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                              />
-                              <Bar yAxisId="left" dataKey="weight" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={25} />
-                              <Bar yAxisId="right" dataKey="ops" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={25} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                          {carrierStats.timeline.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <BarChart data={carrierStats.timeline}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="date" fontSize={11} axisLine={false} tickLine={false} />
+                                <YAxis yAxisId="left" fontSize={11} axisLine={false} tickLine={false} stroke="#6366f1" />
+                                <YAxis yAxisId="right" orientation="right" fontSize={11} axisLine={false} tickLine={false} stroke="#94a3b8" />
+                                <Tooltip 
+                                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                />
+                                <Bar yAxisId="left" dataKey="weight" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={25} />
+                                <Bar yAxisId="right" dataKey="ops" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={25} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
+                              Aucune donnée chronologique disponible
+                            </div>
+                          )}
                         </div>
                       </div>
 
