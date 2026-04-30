@@ -440,14 +440,9 @@ export default function App() {
     }
   }, [data, isSyncing]);
 
-  // ... (dans le render)
-  // Modifier les conditions de rendu des graphiques pour utiliser showCharts
-  // Exemple pour le premier graphique :
-  /*
-  <div className="h-64">
-    {showCharts && transportData.length > 0 ? (
-      <ResponsiveContainer ...>
-  */
+  // --- Render Helpers ---
+
+  return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Sidebar Mobile Toggle */}
       <button 
