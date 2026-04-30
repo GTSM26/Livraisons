@@ -161,6 +161,7 @@ export default function App() {
   // --- Sync Logic ---
 
   const handleSync = async () => {
+    if (isSyncing) return;
     setIsSyncing(true);
     try {
       const freshData = await fetchLogisticsData(operationType);
@@ -168,13 +169,15 @@ export default function App() {
         setData(freshData);
         setLastSync(new Date());
       } else {
-        // En cas de données vides, on évite de bloquer sur les anciennes
         setData([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to sync data:", error);
-      // Optionnel: on peut vider les données en cas d'erreur réseau pour éviter la confusion
       setData([]);
+      // Check for common Google Sheets publication errors (CORS/Redirect)
+      if (error?.toString().includes('ProgressEvent') || error?.message?.includes('CORS')) {
+        alert(`Erreur de synchronisation (${operationType}):\n\nVérifiez que l'onglet Google Sheets est bien 'Publié sur le Web' au format CSV.\n\nAllez dans Fichier > Partager > Publier sur le Web.`);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -182,10 +185,17 @@ export default function App() {
 
   // Reset data and filters when switching mode
   useEffect(() => {
-    setData([]); // On vide pour montrer que le chargement est en cours
+    // Immediate state update
     setSelectedCarrier(null);
     setCarrierFilter('all');
-    handleSync();
+    setData([]); 
+    
+    // Small timeout to allow UI transition before fetching
+    const timer = setTimeout(() => {
+      handleSync();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [operationType]);
 
   useEffect(() => {
@@ -419,9 +429,25 @@ export default function App() {
     });
   };
 
-  // --- Render Helpers ---
+  // Add a small state to delay chart rendering after data load
+  const [showCharts, setShowCharts] = useState(false);
+  useEffect(() => {
+    if (data.length > 0 && !isSyncing) {
+      const timer = setTimeout(() => setShowCharts(true), 300);
+      return () => clearTimeout(timer);
+    } else {
+      setShowCharts(false);
+    }
+  }, [data, isSyncing]);
 
-  return (
+  // ... (dans le render)
+  // Modifier les conditions de rendu des graphiques pour utiliser showCharts
+  // Exemple pour le premier graphique :
+  /*
+  <div className="h-64">
+    {showCharts && transportData.length > 0 ? (
+      <ResponsiveContainer ...>
+  */
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Sidebar Mobile Toggle */}
       <button 
@@ -721,7 +747,7 @@ export default function App() {
                       <div className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Global</div>
                     </div>
                     <div className="h-64">
-                      {transportData.length > 0 ? (
+                      {showCharts && transportData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <BarChart data={transportData}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -734,9 +760,13 @@ export default function App() {
                             <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
                           </BarChart>
                         </ResponsiveContainer>
+                      ) : !showCharts && !isSyncing && data.length > 0 ? (
+                        <div className="h-full flex items-center justify-center">
+                          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                        </div>
                       ) : (
                         <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
-                          Aucune donnée disponible
+                          {isSyncing ? "Chargement..." : "Aucune donnée disponible"}
                         </div>
                       )}
                     </div>
@@ -749,7 +779,7 @@ export default function App() {
                       <Filter className="w-4 h-4 text-slate-400" />
                     </div>
                     <div className="h-64 flex items-center">
-                      {zoneData.length > 0 ? (
+                      {showCharts && zoneData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                           <PieChart>
                             <Pie
@@ -771,7 +801,7 @@ export default function App() {
                         </ResponsiveContainer>
                       ) : (
                         <div className="w-full text-center text-slate-400 italic text-sm">
-                          Aucune zone enregistrée
+                          {isSyncing ? "Chargement..." : "Aucune zone enregistrée"}
                         </div>
                       )}
                     </div>
@@ -782,7 +812,7 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <h4 className="font-bold text-slate-800 mb-6">Evolution des Coûts par Semaine</h4>
                   <div className="h-64">
-                    {monthlyTrend.length > 0 ? (
+                    {showCharts && monthlyTrend.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <LineChart data={monthlyTrend}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -794,7 +824,7 @@ export default function App() {
                       </ResponsiveContainer>
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
-                        Données temporelles insuffisantes
+                        {isSyncing ? "Chargement..." : "Données temporelles insuffisantes"}
                       </div>
                     )}
                   </div>
@@ -1050,7 +1080,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="h-80">
-                          {carrierStats.timeline.length > 0 ? (
+                          {showCharts && carrierStats.timeline.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                               <BarChart data={carrierStats.timeline}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -1066,7 +1096,7 @@ export default function App() {
                             </ResponsiveContainer>
                           ) : (
                             <div className="h-full flex items-center justify-center text-slate-400 italic text-sm">
-                              Aucune donnée chronologique disponible
+                              {isSyncing ? "Chargement..." : "Aucune donnée chronologique disponible"}
                             </div>
                           )}
                         </div>

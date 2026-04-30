@@ -22,7 +22,7 @@ export const generateBCD = (tourNo: string, items: DeliveryData[], bcdNumber: st
   
   // Header Image with Async handling to prevent "Logo non trouvé"
   // Local header image from public/Images folder
-  const logoUrl = '/Images/Entête GTSM.png';
+  const logoUrl = '/Images/logo_gtsm.png';
   
   // Pre-load the image to avoid the "Error" during PDF generation
   const img = new Image();
